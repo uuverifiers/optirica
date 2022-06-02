@@ -101,6 +101,9 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
 
       val drop = createRelation("drop", Seq(Sort.Integer, Sort.Integer))
 
+      val dstFilter = createRelation("dstFilter", Seq(Sort.Integer, Sort.Integer))
+      val typFilter = createRelation("typFilter", Seq(Sort.Integer, Sort.Integer))
+
       val ingressCls = {
         import ap.parser.IExpression._
         List(
@@ -150,7 +153,7 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
           ( c1(dst,typ)  :- (a4(dst,typ), dst =/= 3, dst =/= 4 )),
           ( c2(dst,typ)  :- (a4(dst,typ), dst =/= 3, dst =/= 4 )),
           ( t3(dst,typ)  :- (a4(dst,typ), dst === 3 )),
-          ( t4(dst,typ)  :- (a4(dst,typ), dst === 4 )), // filter typ = 0
+          ( t4(dst,typ)  :- (a4(dst,typ), dst === 4 , dstFilter(dst), typFilter(typ))), // filter typ = 0
           ( drop(dst,typ)  :- (a4(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
           // --------- C1 rules ---------
           ( a3(dst,typ)  :- (c1(dst,typ), (dst === 3 ||| dst === 4) )),
@@ -174,6 +177,8 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
           (false :- (drop(dst, typ), (typ === 0))) // No H1 traffic at drop
         )
       }
+
+      val clauses =  ingressCls ++ networkCls ++ propertyCls
 
       true //To-do
     }
