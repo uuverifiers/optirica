@@ -79,4 +79,104 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
     }
   }
 
+  property("Network Clauses") = {
+    SimpleAPI.withProver(enableAssert = true) { p =>
+      import p._
+
+      val typ  = createConstant("typ")
+      val dst  = createConstant("dst")
+
+      val t1 = createRelation("t1", Seq(Sort.Integer, Sort.Integer))
+      val t2 = createRelation("t2", Seq(Sort.Integer, Sort.Integer))
+      val t3 = createRelation("t3", Seq(Sort.Integer, Sort.Integer))
+      val t4 = createRelation("t4", Seq(Sort.Integer, Sort.Integer))
+
+      val a1 = createRelation("a1", Seq(Sort.Integer, Sort.Integer))
+      val a2 = createRelation("a2", Seq(Sort.Integer, Sort.Integer))
+      val a3 = createRelation("a3", Seq(Sort.Integer, Sort.Integer))
+      val a4 = createRelation("a4", Seq(Sort.Integer, Sort.Integer))
+
+      val c1 = createRelation("c1", Seq(Sort.Integer, Sort.Integer))
+      val c2 = createRelation("c2", Seq(Sort.Integer, Sort.Integer))
+
+      val drop = createRelation("drop", Seq(Sort.Integer, Sort.Integer))
+
+      val ingressCls = {
+        import ap.parser.IExpression._
+        List(
+          (t1(dst, typ) :- (typ === 0, (dst === 2 ||| dst === 3 ||| dst === 4))),
+          (t2(dst, typ) :- (typ > 0, typ < 8, (dst === 1 ||| dst === 3 ||| dst === 4))),
+          (t3(dst, typ) :- (typ > 0, typ < 8, (dst === 1 ||| dst === 2 ||| dst === 4))),
+          (t4(dst, typ) :- (typ > 0, typ < 8, (dst === 1 ||| dst === 2 ||| dst === 3)))
+        )
+      }
+
+      val networkCls = {
+        import ap.parser.IExpression._
+        List(
+          // --------- T1 rules ---------
+          ( a1(dst,typ)  :- (t1(dst,typ), dst =/= 1 )),
+          ( a2(dst,typ)  :- (t1(dst,typ), dst =/= 1 )),
+          ( drop(dst,typ)  :- (t1(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- T2 rules ---------
+          ( a1(dst,typ)  :- (t2(dst,typ), dst =/= 2 )),
+          ( a2(dst,typ)  :- (t2(dst,typ), dst =/= 2 )),
+          ( drop(dst,typ)  :- (t2(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- T3 rules ---------
+          ( a3(dst,typ)  :- (t3(dst,typ), dst =/= 3 )),
+          ( a4(dst,typ)  :- (t3(dst,typ), dst =/= 3 )),
+          ( drop(dst,typ)  :- (t3(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- T4 rules ---------
+          ( a4(dst,typ)  :- (t4(dst,typ), dst =/= 4 )),
+          ( drop(dst,typ)  :- (t4(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- A1 rules ---------
+          ( c1(dst,typ)  :- (a1(dst,typ), dst =/= 1, dst =/= 2 )),
+          ( c2(dst,typ)  :- (a1(dst,typ), dst =/= 1, dst =/= 2 )),
+          ( t1(dst,typ)  :- (a1(dst,typ), dst === 1 )),
+          ( t2(dst,typ)  :- (a1(dst,typ), dst === 2 )),
+          ( drop(dst,typ)  :- (a1(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- A2 rules ---------
+          ( c1(dst,typ)  :- (a2(dst,typ), dst =/= 1, dst =/= 2 )),
+          ( c2(dst,typ)  :- (a2(dst,typ), dst =/= 1, dst =/= 2 )),
+          ( t1(dst,typ)  :- (a2(dst,typ), dst === 1 )),
+          ( t2(dst,typ)  :- (a2(dst,typ), dst === 2 )),
+          ( drop(dst,typ)  :- (a2(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- A3 rules ---------
+          ( c1(dst,typ)  :- (a3(dst,typ), dst =/= 3 )),
+          ( c2(dst,typ)  :- (a3(dst,typ), dst =/= 3 )),
+          ( t3(dst,typ)  :- (a3(dst,typ), dst === 3 )),
+          ( drop(dst,typ)  :- (a3(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- A4 rules ---------
+          ( c1(dst,typ)  :- (a4(dst,typ), dst =/= 3, dst =/= 4 )),
+          ( c2(dst,typ)  :- (a4(dst,typ), dst =/= 3, dst =/= 4 )),
+          ( t3(dst,typ)  :- (a4(dst,typ), dst === 3 )),
+          ( t4(dst,typ)  :- (a4(dst,typ), dst === 4 )), // filter typ = 0
+          ( drop(dst,typ)  :- (a4(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- C1 rules ---------
+          ( a3(dst,typ)  :- (c1(dst,typ), (dst === 3 ||| dst === 4) )),
+          ( a4(dst,typ)  :- (c1(dst,typ), (dst === 3 ||| dst === 4), (typ =/= 0) )),
+          ( a1(dst,typ)  :- (c1(dst,typ), (dst === 1 ||| dst === 2) )),
+          ( a2(dst,typ)  :- (c1(dst,typ), (dst === 1 ||| dst === 2) )),
+          ( drop(dst,typ)  :- (c1(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
+          // --------- C2 rules ---------
+          ( a3(dst,typ)  :- (c2(dst,typ), (dst === 3 ||| dst === 4) )),
+          ( a4(dst,typ)  :- (c2(dst,typ), (dst === 3 ||| dst === 4) )),
+          ( a1(dst,typ)  :- (c2(dst,typ), (dst === 1 ||| dst === 2) )),
+          ( a2(dst,typ)  :- (c2(dst,typ), (dst === 1 ||| dst === 2) )),
+          ( drop(dst,typ)  :- (c2(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) ))
+        )
+      }
+
+      val propertyCls = {
+        import ap.parser.IExpression._
+        List(
+          (false :- (t4(dst, typ), (typ === 0))), // No H1 traffic at T4
+          (false :- (drop(dst, typ), (typ === 0))) // No H1 traffic at drop
+        )
+      }
+
+      true //To-do
+    }
+  }
+
 }
