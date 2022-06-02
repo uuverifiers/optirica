@@ -79,7 +79,7 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
     }
   }
 
-  property("Network Clauses") = {
+  def networkClauses = {
     SimpleAPI.withProver(enableAssert = true) { p =>
       import p._
 
@@ -101,11 +101,9 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
 
       val drop = createRelation("drop", Seq(Sort.Integer, Sort.Integer))
 
-      val dstFilter = createRelation("dstFilter", Seq(Sort.Integer, Sort.Integer))
-      val typFilter = createRelation("typFilter", Seq(Sort.Integer, Sort.Integer))
+      import ap.parser.IExpression._
 
       val ingressCls = {
-        import ap.parser.IExpression._
         List(
           (t1(dst, typ) :- (typ === 0, (dst === 2 ||| dst === 3 ||| dst === 4))),
           (t2(dst, typ) :- (typ > 0, typ < 8, (dst === 1 ||| dst === 3 ||| dst === 4))),
@@ -115,7 +113,6 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
       }
 
       val networkCls = {
-        import ap.parser.IExpression._
         List(
           // --------- T1 rules ---------
           ( a1(dst,typ)  :- (t1(dst,typ), dst =/= 1 )),
@@ -153,7 +150,7 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
           ( c1(dst,typ)  :- (a4(dst,typ), dst =/= 3, dst =/= 4 )),
           ( c2(dst,typ)  :- (a4(dst,typ), dst =/= 3, dst =/= 4 )),
           ( t3(dst,typ)  :- (a4(dst,typ), dst === 3 )),
-          ( t4(dst,typ)  :- (a4(dst,typ), dst === 4 , dstFilter(dst), typFilter(typ))), // filter typ = 0
+          ( t4(dst,typ)  :- (a4(dst,typ), dst === 4 /* , dstFilter(dst), typFilter(typ) */)), // filter typ = 0
           ( drop(dst,typ)  :- (a4(dst,typ), (!(dst >= 1) ||| !(dst <= 4) ||| !(typ >= 0) ||| !(typ <= 7)) )),
           // --------- C1 rules ---------
           ( a3(dst,typ)  :- (c1(dst,typ), (dst === 3 ||| dst === 4) )),
@@ -171,17 +168,109 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
       }
 
       val propertyCls = {
-        import ap.parser.IExpression._
         List(
           (false :- (t4(dst, typ), (typ === 0))), // No H1 traffic at T4
           (false :- (drop(dst, typ), (typ === 0))) // No H1 traffic at drop
         )
       }
 
-      val clauses =  ingressCls ++ networkCls ++ propertyCls
-
-      true //To-do
+      (ingressCls, networkCls, propertyCls)
     }
   }
 
+  /**
+   * Compute maximally-satisfiable subsets of the network clauses.
+   */
+  property("Network verification: MaxSAT") = {
+    SimpleAPI.withProver(enableAssert = true) { p =>
+      import p._
+
+      val (ingressCls, networkCls, propertyCls) = networkClauses
+
+      import ap.parser.IExpression._
+
+      val flags =
+        for (n <- 0 until networkCls.size) yield createRelation("f" + n, Seq())
+
+      val instrNetworkCls =
+        for ((Clause(head, body, constraint), f) <- networkCls zip flags)
+        yield Clause(head, body ++ List(f()), constraint)
+
+      val clauses =
+        ingressCls ++ instrNetworkCls ++ propertyCls
+
+      import Conjunction.{TRUE, FALSE}
+
+      def set2map(s : Set[Predicate]) =
+        (for (f <- flags) yield (f -> (if (s(f)) TRUE else FALSE))).toMap
+
+      val mapLattice =
+        for (s <- PowerSetLattice(flags)) yield set2map(s)
+
+      val satLattice =
+        ClauseSatLattice(mapLattice, clauses, flags.toSet)
+
+      val seed = 123
+      implicit val randomData = new SeededRandomDataSource(seed)
+
+      val optFeasible =
+        for (bv <- Algorithms.optimalFeasibleObjects(satLattice)(
+                                                     satLattice.bottom))
+        yield satLattice.getLabel(bv)
+
+      optFeasible.size == 2 // there should be two solutions
+    }
+  }
+
+  /**
+   * Compute filters for the clause t4(dst,typ) :- a4(dst,typ), dst === 4
+   */
+  property("Network verification: bit-wise dst/type-filter") = {
+    SimpleAPI.withProver(enableAssert = true) { p =>
+      import p._
+
+      val (ingressCls, networkCls, propertyCls) = networkClauses
+
+      val dstFilter = createRelation("dstFilter", Seq(Sort.Integer))
+      val typFilter = createRelation("typFilter", Seq(Sort.Integer))
+
+      val updatedClause = {
+        import ap.parser.IExpression._
+        val c@Clause(head@IAtom(_, Seq(dst, typ)), body, constraint) =
+          networkCls(28)
+        Clause(head, body ++ List(dstFilter(dst), typFilter(typ)), constraint)
+      }
+
+      val instrNetworkCls = networkCls.updated(28, updatedClause)
+
+      val clauses =
+        ingressCls ++ instrNetworkCls ++ propertyCls
+
+      import TerForConvenience._
+      implicit val o = order
+
+      val dstLattice =
+        for (s <- PowerSetLattice(1 to 4))
+        yield Map(dstFilter -> disjFor(for (t <- s) yield v(0) === t))
+      val typLattice =
+        for (s <- PowerSetLattice(0 to 7))
+        yield Map(typFilter -> disjFor(for (t <- s) yield v(0) === t))
+
+      val mapLattice =
+        for (m1 <- dstLattice; m2 <- typLattice) yield (m1 ++ m2)
+
+      val satLattice =
+        ClauseSatLattice(mapLattice, clauses, Set(dstFilter, typFilter))
+
+      val seed = 123
+      implicit val randomData = new SeededRandomDataSource(seed)
+
+      val optFeasible =
+        for (bv <- Algorithms.optimalFeasibleObjects(satLattice)(
+                                                     satLattice.bottom))
+        yield satLattice.getLabel(bv)
+
+      optFeasible.size == 1 // there should be one solution, filtering typ == 0
+    }
+  }
 }
