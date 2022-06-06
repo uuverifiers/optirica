@@ -35,10 +35,10 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
       val clauses = {
         import ap.parser.IExpression._
         List(
-          I(0, 0, n)         :- f0(),
+          I(0, 0, n)         :-             (f0(), n > 0),
           I(x + 1, y + 1, n) :- (I(x, y, n), f1(), y < n),
           I(x + 2, y + 1, n) :- (I(x, y, n), f2(), y < n),
-          false              :- (I(x, y, n), f3(), x > 2*n)
+          false              :- (I(x, y, n), f3(), x >= 2*n)
         )
       }
 
@@ -49,7 +49,12 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
 
       val setLattice =
         PowerSetLattice(flags).withScore(s =>
-          s.size + (if (s contains f0) 1 else 0))
+          (s.iterator map {
+             case `f0` => 2
+             case `f1` => 1
+             case `f2` => 1
+             case `f3` => 2
+           }).sum)
 
       val mapLattice =
         for (s <- setLattice) yield set2map(s)
@@ -65,7 +70,10 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
                 satLattice.bottom))
          yield satLattice.getLabel(bv)).toSet
 
-      assert(maxFeasible == Set(set2map(Set(f0, f1, f2)), set2map(Set(f1, f2, f3))))
+      assert(maxFeasible ==
+               Set(set2map(Set(f0, f1, f2)),
+                   set2map(Set(f1, f2, f3)),
+                   set2map(Set(f0, f1, f3))))
 
       val optFeasible =
         (for (bv <- Algorithms.optimalFeasibleObjects(
@@ -73,7 +81,7 @@ object ClauseSatTest extends Properties("ClauseSatTest") {
                 satLattice.bottom))
          yield satLattice.getLabel(bv)).toSet
 
-      assert(optFeasible == Set(set2map(Set(f0, f1, f2))))
+      assert(optFeasible == Set(set2map(Set(f0, f1, f3))))
 
       true
     }
