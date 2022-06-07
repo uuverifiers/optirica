@@ -194,7 +194,8 @@ object NetworkTest extends Properties("NetworkTest") {
         yield Map(typFilter -> disjFor(for (t <- s) yield v(0) === t))
 
       val mapLattice =
-        for (m1 <- dstLattice; m2 <- typLattice) yield (m1 ++ m2)
+        (for (m1 <- dstLattice; m2 <- typLattice) yield (m1 ++ m2)).
+          mapScore { p => p._1 + p._2 }
 
       val satLattice =
         ClauseSatLattice(mapLattice, clauses, Set(dstFilter, typFilter))
@@ -207,7 +208,7 @@ object NetworkTest extends Properties("NetworkTest") {
                                                      satLattice.bottom))
         yield satLattice.getLabel(bv)
 
-      optFeasible.size == 1 // there should be one solution, filtering typ == 0
+      optFeasible.size == 2 // there should be two solutions: either filter dst == 4 or typ == 0
     }
   }
 
